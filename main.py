@@ -41,7 +41,7 @@ page = st.sidebar.radio("페이지 선택",
 if page == "1. 신용평가모형 (메인)":
     st.title('신용평가모형')
     st.write("이탈 고객 예측을 위한 신용평가 모델 구축 파이프라인입니다.")
-    st.write("사용하실 데이터 파일(`Accepted_data (1).csv`)을 아래에 업로드해 주세요.")
+    st.write("사용하실 데이터 파일을 아래에 업로드해 주세요.")
     
     uploaded_file = st.file_uploader("CSV 파일 업로드", type=['csv'])
     if uploaded_file is not None:
