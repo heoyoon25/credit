@@ -41,7 +41,7 @@ page = st.sidebar.radio("페이지 선택",
 if page == "1. 신용평가모형 (메인)":
     st.title('신용평가모형')
     st.write("이탈 고객 예측을 위한 신용평가 모델 구축 파이프라인입니다.")
-    st.write("사용하실 데이터 파일(`Accepted_data (1).csv`)을 아래에 업로드해 주세요.")
+    st.write("사용하실 데이터 파일을 아래에 업로드해 주세요.")
     
     uploaded_file = st.file_uploader("CSV 파일 업로드", type=['csv'])
     if uploaded_file is not None:
@@ -266,9 +266,6 @@ elif page == "5. 연구 결과":
         
         first_model = list(models.values())[0]
         classes = first_model.classes_
-        
-        st.write("📊 **평가 기준(Positive Class) 설정**")
-        st.info("💡 ROC Curve가 뒤집혀서(점선 아래로) 나온다면, 컴퓨터가 예측 타겟을 반대로 인식한 것입니다. 아래에서 진짜 타겟 값을 선택해 주세요.")
         
         pos_class = st.selectbox("어떤 값을 '이탈(예측 타겟)' 범주로 평가하시겠습니까?", options=classes)
         
