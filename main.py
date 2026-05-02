@@ -41,7 +41,7 @@ page = st.sidebar.radio("페이지 선택",
 if page == "1. 신용평가모형 (메인)":
     st.title('신용평가모형')
     st.write("이탈 고객 예측을 위한 신용평가 모델 구축 파이프라인입니다.")
-    st.write("사용하실 데이터 파일을 아래에 업로드해 주세요.")
+    st.write("사용하실 데이터 파일(`Accepted_data (1).csv`)을 아래에 업로드해 주세요.")
     
     uploaded_file = st.file_uploader("CSV 파일 업로드", type=['csv'])
     if uploaded_file is not None:
@@ -88,21 +88,25 @@ elif page == "2. 데이터 탐색":
             try:
                 if chart_type == 'Histogram':
                     sns.histplot(data=df, x=x_var, kde=True, ax=ax)
+                    
                 elif chart_type == 'Box plot':
                     if y_var != '선택 안함':
                         sns.boxplot(data=df, x=x_var, y=y_var, ax=ax)
                     else:
-                        sns.boxplot(data=df, y=x_var, ax=ax)
+                        sns.boxplot(data=df, x=x_var, ax=ax) 
+                        
                 elif chart_type == 'Scatter plot':
                     if y_var != '선택 안함':
                         sns.scatterplot(data=df, x=x_var, y=y_var, ax=ax)
                     else:
                         st.warning("Scatter plot은 Y축 변수가 필요합니다.")
+                        
                 elif chart_type == 'Bar chart':
                     if y_var != '선택 안함':
                         sns.barplot(data=df, x=x_var, y=y_var, ax=ax)
                     else:
-                        df[x_var].value_counts().plot(kind='bar', ax=ax)
+                        sns.countplot(data=df, x=x_var, ax=ax)
+                        
                 elif chart_type == 'Line chart':
                     if y_var != '선택 안함':
                         sns.lineplot(data=df, x=x_var, y=y_var, ax=ax)
@@ -125,24 +129,35 @@ elif page == "3. 데이터 전처리 및 분할":
         df_prep = st.session_state['df_preprocessed']
         
         st.subheader("1. 데이터 전처리")
-        col1, col2, col3 = st.columns(3)
         
-        if col1.button("결측치 처리 (제거)"):
+        # 1. 결측치 처리
+        if st.button("결측치 일괄 처리 (제거)"):
             df_prep = df_prep.dropna()
             st.session_state['df_preprocessed'] = df_prep
             st.success(f"결측치가 제거되었습니다. 현재 행 수: {df_prep.shape[0]}")
             
-        if col2.button("이상치 처리 (수치형만)"):
-            num_cols = df_prep.select_dtypes(include=[np.number]).columns
-            for col in num_cols:
-                Q1 = df_prep[col].quantile(0.25)
-                Q3 = df_prep[col].quantile(0.75)
-                IQR = Q3 - Q1
-                df_prep = df_prep[(df_prep[col] >= Q1 - 1.5 * IQR) & (df_prep[col] <= Q3 + 1.5 * IQR)]
-            st.session_state['df_preprocessed'] = df_prep
-            st.success(f"이상치가 처리되었습니다. 현재 행 수: {df_prep.shape[0]}")
-            
-        if col3.button("원핫인코딩 (범주형)"):
+        # 2. 이상치 처리 (선택형으로 개선)
+        st.write("**이상치 처리 (선택한 변수만 IQR 방식으로 제거)**")
+        st.info("⚠️ 주의: 0/1로 이루어진 변수나 ID 변수를 선택하면 데이터가 대량으로 삭제될 수 있습니다. '금액', '나이' 같은 연속형 변수만 선택하세요.")
+        num_cols = df_prep.select_dtypes(include=[np.number]).columns.tolist()
+        outlier_cols = st.multiselect("이상치를 제거할 변수를 선택하세요", options=num_cols)
+        
+        if st.button("선택한 변수 이상치 제거"):
+            if not outlier_cols:
+                st.warning("이상치를 처리할 변수를 먼저 선택해 주세요.")
+            else:
+                original_len = len(df_prep)
+                for col in outlier_cols:
+                    Q1 = df_prep[col].quantile(0.25)
+                    Q3 = df_prep[col].quantile(0.75)
+                    IQR = Q3 - Q1
+                    df_prep = df_prep[(df_prep[col] >= Q1 - 1.5 * IQR) & (df_prep[col] <= Q3 + 1.5 * IQR)]
+                
+                st.session_state['df_preprocessed'] = df_prep
+                st.success(f"선택한 변수의 이상치가 처리되었습니다. (행 수 변화: {original_len} ➡️ {df_prep.shape[0]})")
+
+        # 3. 원핫인코딩
+        if st.button("원핫인코딩 (범주형 문자열 변수만)"):
             df_prep = pd.get_dummies(df_prep, drop_first=True)
             st.session_state['df_preprocessed'] = df_prep
             st.success("범주형 변수에 원핫인코딩이 적용되었습니다.")
@@ -171,15 +186,26 @@ elif page == "3. 데이터 전처리 및 분할":
                 X = df_prep[selected_features]
                 y = df_prep[target_var]
                 
-                X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=test_size, random_state=42)
-                
-                st.session_state['split_data'] = {
-                    'X_train': X_train, 'X_test': X_test,
-                    'y_train': y_train, 'y_test': y_test
-                }
-                st.success(f"데이터가 {ratio} 비율로 성공적으로 분할되었습니다!")
-                st.write(f"- Train data shape: {X_train.shape}")
-                st.write(f"- Test data shape: {X_test.shape}")
+                try:
+                    # 핵심 수정 포인트: stratify=y 옵션을 추가하여 0과 1의 비율을 똑같이 분할합니다.
+                    X_train, X_test, y_train, y_test = train_test_split(
+                        X, y, test_size=test_size, random_state=42, stratify=y
+                    )
+                    
+                    st.session_state['split_data'] = {
+                        'X_train': X_train, 'X_test': X_test,
+                        'y_train': y_train, 'y_test': y_test
+                    }
+                    st.success(f"데이터가 {ratio} 비율로 성공적으로 분할되었습니다!")
+                    st.write(f"- Train data shape: {X_train.shape}")
+                    st.write(f"- Test data shape: {X_test.shape}")
+                    
+                    # 사용자가 확인하기 쉽게 Train set의 Y값 분포를 보여줍니다.
+                    st.info(f"💡 Train Set의 종속변수(Y) 클래스 분포:\n{y_train.value_counts().to_string()}")
+                    
+                except ValueError as ve:
+                    # 만약 Y 변수에 진짜로 값이 1개밖에 없다면 여기서 에러를 잡아줍니다.
+                    st.error(f"데이터 분할 실패: 선택하신 종속변수(Y) '{target_var}'에 범주가 1개뿐입니다. Y 변수를 다시 확인해 주세요. (에러: {ve})")
 
     else:
         st.warning("1페이지에서 데이터를 먼저 업로드해주세요.")
@@ -203,7 +229,6 @@ elif page == "4. 연구 모형":
             
             st.session_state['models'] = {} # 기존 모델 초기화
             
-            # --- 수정한 예외 처리(try-except) 블록 ---
             try:
                 with st.spinner('학습 중입니다...'):
                     if "Logistic Regression" in model_choice:
@@ -223,7 +248,6 @@ elif page == "4. 연구 모형":
                 st.info("💡 팁: 3페이지로 돌아가서 '결측치 제거'와 '원핫인코딩'을 실행했는지, 혹은 종속변수(Y)가 범주형(분류 목적)이 맞는지 확인해 주세요.")
             except Exception as e:
                 st.error(f"알 수 없는 에러가 발생했습니다: {e}")
-            # ---------------------------------------
     else:
         st.warning("3페이지에서 데이터 전처리 및 분할(Data Partitioning)을 먼저 완료해주세요.")
 
@@ -240,6 +264,14 @@ elif page == "5. 연구 결과":
         X_test = split_data['X_test']
         y_test = split_data['y_test']
         
+        first_model = list(models.values())[0]
+        classes = first_model.classes_
+        
+        st.write("📊 **평가 기준(Positive Class) 설정**")
+        st.info("💡 ROC Curve가 뒤집혀서(점선 아래로) 나온다면, 컴퓨터가 예측 타겟을 반대로 인식한 것입니다. 아래에서 진짜 타겟 값을 선택해 주세요.")
+        
+        pos_class = st.selectbox("어떤 값을 '이탈(예측 타겟)' 범주로 평가하시겠습니까?", options=classes)
+        
         st.subheader("모형별 성능 평가 지표")
         
         results = []
@@ -250,9 +282,9 @@ elif page == "5. 연구 결과":
             
             acc = accuracy_score(y_test, y_pred)
             try:
-                prec = precision_score(y_test, y_pred, average='binary', pos_label=model.classes_[1])
-                rec = recall_score(y_test, y_pred, average='binary', pos_label=model.classes_[1])
-                f1 = f1_score(y_test, y_pred, average='binary', pos_label=model.classes_[1])
+                prec = precision_score(y_test, y_pred, average='binary', pos_label=pos_class)
+                rec = recall_score(y_test, y_pred, average='binary', pos_label=pos_class)
+                f1 = f1_score(y_test, y_pred, average='binary', pos_label=pos_class)
             except ValueError:
                 prec = precision_score(y_test, y_pred, average='macro')
                 rec = recall_score(y_test, y_pred, average='macro')
@@ -267,8 +299,11 @@ elif page == "5. 연구 결과":
             })
             
             if hasattr(model, "predict_proba"):
-                y_prob = model.predict_proba(X_test)[:, 1]
-                y_test_numeric = (y_test == model.classes_[1]).astype(int) 
+                pos_index = np.where(model.classes_ == pos_class)[0][0]
+                y_prob = model.predict_proba(X_test)[:, pos_index]
+                
+                y_test_numeric = (y_test == pos_class).astype(int) 
+                
                 fpr, tpr, _ = roc_curve(y_test_numeric, y_prob)
                 roc_auc = auc(fpr, tpr)
                 roc_data[name] = (fpr, tpr, roc_auc)
