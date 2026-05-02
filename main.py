@@ -133,7 +133,6 @@ elif page == "3. 데이터 전처리 및 분할":
             st.success(f"결측치가 제거되었습니다. 현재 행 수: {df_prep.shape[0]}")
             
         if col2.button("이상치 처리 (수치형만)"):
-            # 수치형 변수에 대해 단순 IQR 방식 적용
             num_cols = df_prep.select_dtypes(include=[np.number]).columns
             for col in num_cols:
                 Q1 = df_prep[col].quantile(0.25)
@@ -155,10 +154,8 @@ elif page == "3. 데이터 전처리 및 분할":
         st.subheader("2. Feature Selection")
         columns = df_prep.columns.tolist()
         
-        # Y 변수 (Target) 선택
         target_var = st.selectbox("종속변수(Y)를 선택하세요", options=columns)
         
-        # X 변수 (Features) 선택 (Y 변수 제외)
         feature_options = [c for c in columns if c != target_var]
         selected_features = st.multiselect("독립변수(X)를 선택하세요", options=feature_options, default=feature_options)
         
@@ -206,18 +203,27 @@ elif page == "4. 연구 모형":
             
             st.session_state['models'] = {} # 기존 모델 초기화
             
-            with st.spinner('학습 중입니다...'):
-                if "Logistic Regression" in model_choice:
-                    lr = LogisticRegression(max_iter=1000)
-                    lr.fit(X_train, y_train)
-                    st.session_state['models']["Logistic Regression"] = lr
-                    
-                if "Decision Tree" in model_choice:
-                    dt = DecisionTreeClassifier(random_state=42)
-                    dt.fit(X_train, y_train)
-                    st.session_state['models']["Decision Tree"] = dt
-                    
-            st.success("선택된 모형의 학습이 완료되었습니다! 5페이지에서 결과를 확인하세요.")
+            # --- 수정한 예외 처리(try-except) 블록 ---
+            try:
+                with st.spinner('학습 중입니다...'):
+                    if "Logistic Regression" in model_choice:
+                        lr = LogisticRegression(max_iter=1000)
+                        lr.fit(X_train, y_train)
+                        st.session_state['models']["Logistic Regression"] = lr
+                        
+                    if "Decision Tree" in model_choice:
+                        dt = DecisionTreeClassifier(random_state=42)
+                        dt.fit(X_train, y_train)
+                        st.session_state['models']["Decision Tree"] = dt
+                        
+                st.success("선택된 모형의 학습이 완료되었습니다! 5페이지에서 결과를 확인하세요.")
+                
+            except ValueError as ve:
+                st.error(f"데이터 값 에러가 발생했습니다: {ve}")
+                st.info("💡 팁: 3페이지로 돌아가서 '결측치 제거'와 '원핫인코딩'을 실행했는지, 혹은 종속변수(Y)가 범주형(분류 목적)이 맞는지 확인해 주세요.")
+            except Exception as e:
+                st.error(f"알 수 없는 에러가 발생했습니다: {e}")
+            # ---------------------------------------
     else:
         st.warning("3페이지에서 데이터 전처리 및 분할(Data Partitioning)을 먼저 완료해주세요.")
 
@@ -242,15 +248,12 @@ elif page == "5. 연구 결과":
         for name, model in models.items():
             y_pred = model.predict(X_test)
             
-            # 성능 지표 계산 (이진 분류 기준)
             acc = accuracy_score(y_test, y_pred)
-            # 평균 방식은 target 변수의 형태에 따라 다를 수 있으나 범용적인 macro나 기본 이진분류를 고려
             try:
                 prec = precision_score(y_test, y_pred, average='binary', pos_label=model.classes_[1])
                 rec = recall_score(y_test, y_pred, average='binary', pos_label=model.classes_[1])
                 f1 = f1_score(y_test, y_pred, average='binary', pos_label=model.classes_[1])
             except ValueError:
-                 # 다중 분류일 경우 macro 사용
                 prec = precision_score(y_test, y_pred, average='macro')
                 rec = recall_score(y_test, y_pred, average='macro')
                 f1 = f1_score(y_test, y_pred, average='macro')
@@ -263,16 +266,13 @@ elif page == "5. 연구 결과":
                 "F1 Score": f1
             })
             
-            # ROC Curve 데이터 계산 (확률 값 필요)
             if hasattr(model, "predict_proba"):
-                y_prob = model.predict_proba(X_test)[:, 1] # 양성 클래스 확률
-                # y_test가 문자열 범주일 수 있으므로 인코딩 처리
+                y_prob = model.predict_proba(X_test)[:, 1]
                 y_test_numeric = (y_test == model.classes_[1]).astype(int) 
                 fpr, tpr, _ = roc_curve(y_test_numeric, y_prob)
                 roc_auc = auc(fpr, tpr)
                 roc_data[name] = (fpr, tpr, roc_auc)
                 
-        # 데이터프레임으로 결과 출력
         results_df = pd.DataFrame(results).set_index("Model")
         st.table(results_df.style.format("{:.4f}"))
         
